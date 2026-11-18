@@ -11,7 +11,7 @@ polimorfismo, encapsulación y manejo avanzado de excepciones sin base de datos.
 from abc import ABC, abstractmethod
 from enum import Enum
 import logging
-from typing import Any, overload
+from typing import Any, overload, List, Optional
 import re
 
 
@@ -671,100 +671,286 @@ class Reservation(BaseEntity):
             f"Status: {self._status.value} | Total: ${self._total_cost:,.2f}"
         )
             
-# =================================
-# 7. Simulación de diez operaciones
-# =================================
+# ==========================================
+# 7. Sistema Gestor con Listas Internas
+# ==========================================
+
+class SoftwareFJSystem:
+    """Orquesta el registro de clientes, servicios y reservas en memoria."""
+
+    def __init__(self) -> None:
+        """Inicializa las colecciones internas encapsuladas del sistema."""
+        self._clients: List[Client] = []
+        self._services: List[Service] = []
+        self._reservations: List[Reservation] = []
+
+    @property
+    def clients(self) -> List[Client]:
+        """Retorna una copia de la lista de clientes registrados."""
+        return list(self._clients)
+
+    @property
+    def services(self) -> List[Service]:
+        """Retorna una copia de la lista de servicios registrados."""
+        return list(self._services)
+
+    @property
+    def reservations(self) -> List[Reservation]:
+        """Retorna una copia del historial de reservas."""
+        return list(self._reservations)
+
+    def find_client(self, client_id: str) -> Optional[Client]:
+        """Busca un cliente por su identificador único."""
+        for client in self._clients:
+            if client.entity_id == client_id:
+                return client
+        return None
+
+    def find_service(self, service_id: str) -> Optional[Service]:
+        """Busca un servicio por su identificador único."""
+        for service in self._services:
+            if service.entity_id == service_id:
+                return service
+        return None
+
+    def register_client(self, client_id: str, name: str, email: str) -> Client:
+        """Crea, valida y almacena un nuevo cliente evitando duplicados.
+
+        Raises:
+            InvalidClientError: Si el ID o correo ya existen o los datos son inválidos.
+        """
+        if self.find_client(client_id) is not None:
+            raise InvalidClientError(
+                f"Operación no permitida: ya existe un cliente con ID '{client_id}'."
+            )
+        if any(existing.email == str(email).strip().lower() for existing in self._clients):
+            raise InvalidClientError(
+                f"Operación no permitida: el correo '{email}' ya está registrado."
+            )
+
+        client = Client(client_id, name, email)
+        self._clients.append(client)
+        LOGGER.info("Cliente registrado exitosamente: %s", client.get_details())
+        return client
+
+    def register_service(self, service: Service) -> Service:
+        """Valida e incorpora un servicio especializado al catálogo interno.
+
+        Raises:
+            InvalidServiceError: Si el objeto no es un Service o su ID ya existe.
+        """
+        if not isinstance(service, Service):
+            raise InvalidServiceError("El objeto proporcionado no es un servicio válido.")
+        if self.find_service(service.entity_id) is not None:
+            raise InvalidServiceError(
+                f"Operación no permitida: ya existe un servicio con ID '{service.entity_id}'."
+            )
+
+        self._services.append(service)
+        LOGGER.info("Servicio registrado exitosamente: %s", service.get_description())
+        return service
+
+    def book_service(
+        self,
+        client_id: str,
+        service_id: str,
+        duration: int,
+        tax_rate: float = 0.19,
+        discount_rate: float = 0.0,
+        extra_charge: float = 0.0,
+    ) -> Reservation:
+        """Crea y procesa una reserva a partir de los IDs de cliente y servicio.
+
+        Raises:
+            ReservationError: Si el cliente o servicio no existen o falla el procesamiento.
+        """
+        client = self.find_client(client_id)
+        if client is None:
+            raise ReservationError(
+                f"Intento de reserva incorrecto: el cliente '{client_id}' no existe."
+            )
+
+        service = self.find_service(service_id)
+        if service is None:
+            raise ReservationError(
+                f"Intento de reserva incorrecto: el servicio '{service_id}' no existe."
+            )
+
+        reservation = Reservation(
+            client=client,
+            service=service,
+            duration=duration,
+            tax_rate=tax_rate,
+            discount_rate=discount_rate,
+            extra_charge=extra_charge,
+        )
+        self._reservations.append(reservation)
+        reservation.process()
+        return reservation
+
+    def cancel_reservation(self, reservation_id: str) -> None:
+        """Localiza y cancela una reserva confirmada por su identificador.
+
+        Raises:
+            ReservationError: Si la reserva no existe o su estado impide cancelarla.
+        """
+        for reservation in self._reservations:
+            if reservation.entity_id == reservation_id:
+                reservation.cancel()
+                return
+        raise ReservationError(
+            f"Operación no permitida: no se encontró la reserva '{reservation_id}'."
+        )
+
+
+# ==========================================
+# 8. Simulación Integral (14 Operaciones)
+# ==========================================
+
+def run_simulation() -> None:
+    """Ejecuta una simulación de 14 operaciones válidas e inválidas sin detenerse."""
+    system = SoftwareFJSystem()
+    print("=== INICIO DE SIMULACIÓN - SISTEMA INTEGRAL SOFTWARE FJ ===\n")
+
+    # 1. Registro válido de cliente 1
+    try:
+        c1 = system.register_client("CLI-01", "Juan Pérez", "juan.perez@softwarefj.com")
+        print(f"[OP 01 - OK] {c1.get_details()}")
+    except SoftwareFJError as exc:
+        print(f"[OP 01 - ERROR] {exc}")
+
+    # 2. Registro inválido de cliente (nombre demasiado corto)
+    try:
+        system.register_client("CLI-02", "Al", "al@softwarefj.com")
+    except InvalidClientError as exc:
+        LOGGER.warning("OP 02 controlada: %s", exc)
+        print(f"[OP 02 - CAPTURADO] {exc}")
+
+    # 3. Registro inválido de cliente (correo malformado)
+    try:
+        system.register_client("CLI-02", "Carlos Ruiz", "carlos.ruiz@dominio_sin_extension")
+    except InvalidClientError as exc:
+        LOGGER.warning("OP 03 controlada: %s", exc)
+        print(f"[OP 03 - CAPTURADO] {exc}")
+
+    # 4. Registro válido de cliente 2 + intento duplicado
+    try:
+        c2 = system.register_client("CLI-02", "María López", "maria.lopez@softwarefj.com")
+        print(f"[OP 04A - OK] {c2.get_details()}")
+        system.register_client("CLI-01", "Juan Clon", "clon@softwarefj.com")
+    except InvalidClientError as exc:
+        LOGGER.warning("OP 04B controlada: %s", exc)
+        print(f"[OP 04B - CAPTURADO] {exc}")
+
+    # 5. Creación correcta de servicio de Sala
+    try:
+        room_service = RoomService("SRV-01", "Sala Magna", 45000.0, capacity=20)
+        system.register_service(room_service)
+        print(f"[OP 05 - OK] {room_service.get_description()}")
+    except InvalidServiceError as exc:
+        print(f"[OP 05 - ERROR] {exc}")
+
+    # 6. Creación correcta de servicio de Alquiler de Equipos
+    try:
+        equip_service = EquipmentService(
+            "SRV-02", "Servidor Cloud Dedicado", 120000.0, hardware_type="Dell PowerEdge"
+        )
+        system.register_service(equip_service)
+        print(f"[OP 06 - OK] {equip_service.get_description()}")
+    except InvalidServiceError as exc:
+        print(f"[OP 06 - ERROR] {exc}")
+
+    # 7. Creación correcta de Asesoría + Sala no disponible
+    try:
+        adv_service = AdvisoryService(
+            "SRV-03", "Consultoría Machine Learning", 90000.0, specialty="Artificial Intelligence"
+        )
+        unavailable_room = RoomService(
+            "SRV-04", "Auditorio Principal", 80000.0, capacity=50, available=False
+        )
+        system.register_service(adv_service)
+        system.register_service(unavailable_room)
+        print(f"[OP 07A - OK] {adv_service.get_description()}")
+        print(f"[OP 07B - OK] {unavailable_room.get_details()}")
+    except InvalidServiceError as exc:
+        print(f"[OP 07 - ERROR] {exc}")
+
+    # 8. Creación incorrecta de servicio (tarifa negativa)
+    try:
+        bad_service = EquipmentService("SRV-05", "Laptop Workstation", -15000.0, "MacBook Pro")
+        system.register_service(bad_service)
+    except InvalidServiceError as exc:
+        LOGGER.warning("OP 08 controlada: %s", exc)
+        print(f"[OP 08 - CAPTURADO] {exc}")
+
+    # 9. Reserva exitosa 1: Sala por 8 horas (aplica 5% extra por volumen + 10% promo)
+    try:
+        res1 = system.book_service(
+            client_id="CLI-01",
+            service_id="SRV-01",
+            duration=8,
+            tax_rate=0.19,
+            discount_rate=0.10,
+            extra_charge=10000.0,
+        )
+        print(f"[OP 09 - CONFIRMADA] {res1.get_details()}")
+    except ReservationError as exc:
+        print(f"[OP 09 - ERROR] {exc}")
+
+    # 10. Reserva exitosa 2: Equipo por 3 días con póliza de seguro de $30/día
+    try:
+        res2 = system.book_service(
+            client_id="CLI-02",
+            service_id="SRV-02",
+            duration=3,
+            extra_charge=30.0,
+        )
+        print(f"[OP 10 - CONFIRMADA] {res2.get_details()}")
+    except ReservationError as exc:
+        print(f"[OP 10 - ERROR] {exc}")
+
+    # 11. Reserva fallida 1: Duración negativa (demuestra encadenamiento de excepciones)
+    try:
+        system.book_service(client_id="CLI-01", service_id="SRV-03", duration=-2)
+    except ReservationError as exc:
+        print(f"[OP 11 - CAPTURADO] {exc} | Causa raíz: {type(exc.__cause__).__name__}")
+
+    # 12. Reserva fallida 2: Servicio no disponible
+    try:
+        system.book_service(client_id="CLI-02", service_id="SRV-04", duration=4)
+    except ReservationError as exc:
+        print(f"[OP 12 - CAPTURADO] {exc} | Causa raíz: {type(exc.__cause__).__name__}")
+
+    # 13. Reserva fallida 3: Cálculo inconsistente (descuento >= 100%) y cliente inexistente
+    try:
+        system.book_service(
+            client_id="CLI-01", service_id="SRV-03", duration=2, discount_rate=1.25
+        )
+    except ReservationError as exc:
+        print(f"[OP 13A - CAPTURADO] {exc}")
+
+    try:
+        system.book_service(client_id="CLI-99", service_id="SRV-01", duration=2)
+    except ReservationError as exc:
+        LOGGER.warning("OP 13B controlada: %s", exc)
+        print(f"[OP 13B - CAPTURADO] {exc}")
+
+    # 14. Cancelación exitosa de reserva confirmada + cancelación inválida de reserva fallida
+    try:
+        system.cancel_reservation("RES-1001")
+        print("[OP 14A - OK] Reserva RES-1001 cancelada correctamente.")
+        system.cancel_reservation("RES-1003")
+    except ReservationError as exc:
+        print(f"[OP 14B - CAPTURADO] {exc}")
+
+    print("\n=== RESUMEN FINAL EN MEMORIA ===")
+    print(f"Clientes activos: {len(system.clients)}")
+    print(f"Servicios en catálogo: {len(system.services)}")
+    print(f"Reservas registradas: {len(system.reservations)}")
+    for res in system.reservations:
+        print(f"  -> {res.get_details()}")
+    print("\n=== SIMULACIÓN FINALIZADA (Revisa software_fj.log) ===")
+
 
 if __name__ == "__main__":
-    print("=== Simulación de Operaciones del Sistema de Reservas ===")
-    
-    
-    clientes_registrados = []
-    servicios_disponibles = []
-    historial_reservas = []
-    
-    #Operación 1: Registro de cliente 1
-    try:
-        c1 = Client("CLI-01", "Juan Pérez", "juan.perez@email.com")
-        clientes_registrados.append(c1)
-        print(f"1. Registro exitoso: {c1.details()}")
-        logging.info(f"Cliente registrado: {c1.name}")
-    except Exception as e:
-        print(f"Error al registrar cliente: {e}")
-    
-    #Operación 2: Registro fallido del cliente (nombre invalido)
-    try:
-        print("\n2. Intentando registrar cliente con nombre invalido")
-        c_malo = Client("CLI-02", "All", "all@email.com")
-    except InvalidClientError as cie:
-        print(f"Excepcion capturada: {cie}")
-        logging.warning(f"Intento de registro fallido: {cie}")
-        
-    # Operación 3: Registro de cliente 2
-    try: 
-        c2 = Client("CLI-03", "María López", "maria.lopez@email.com")
-        clientes_registrados.append(c2)
-        print(f"\n3. Registro exitoso: {c2.detalles()}")
-    except Exception as e:
-        print(f"Error: {e}")
-    
-    #Operación 4: Registro de servicio de sala
-    try: 
-        s1 = RoomService("SRV-01", "Sala Magna", 45000.0, 20)
-        servicios_disponibles.append(s1)
-        print(f"\n4. Servicio registrado: {s1.descripcion()}")
-    except Exception as e:
-        print(f"Error: {e}")
-    
-    #Operación 5: Registro de servicio de asesoría
-    try:
-        s2 = AdvisoryService("SRV-02", "Servidor Cloud AWS", 120000.0, "Servidor Dedicado")
-        servicios_disponibles.append(s2)
-        print(f"\n5. Servicio registrado: {s2.descripcion()}")
-    except Exception as e:
-        print(f"Error: {e}")
-        
-    #Operación 6: Creación correcta de servicio 
-    try:
-        s3 = AdvisoryService("SRV-03", "Consultoria en Machine Learning", 90000.0, "Inteligencia Artificial")
-        servicios_disponibles.append(s3)
-        print(f"\n6. Servicio registrado: {s3.descripcion()}")
-    except Exception as e:
-        print(f"Error: {e}")
-        
-    #Operación 7: Reserva Exitosa 1
-    try:
-        print("\n7. Procesando reserva 1 (Sala magna por 4 horas con 10% de descuento)")
-        res1 = Reserva(clientes_registrados[0], servicios_disponibles[0], 4, param_extra=0.10)
-        historial_reservas.append(res1)
-        res1.procesar_reserva()
-    except Exception as e:
-        pass
-    
-    #Operación 8: Reseva Exitosa 2 (Equipo con seguro)
-    try:
-        print("8. Procesando reserva 3 (Servidor por tres días con seguro de $30)")
-        res2 = Reserva(clientes_registrados[1], servicios_disponibles[1], 3, param_extra=30.0)
-        historial_reservas.append(res2)
-        res2.procesar_reserva()
-    except Exception as e:
-        pass
-    
-    #Operación 9: Reserva fallida (Duración invalida, hace que entre a la excepción y encadenamiento)
-    try:
-        print("9. Procesando reserva 4 (Asesoria con duración negativa)")
-        res3 = Reserva(clientes_registrados[0], servicios_disponibles[2], -2, param_extra=0.0)
-        historial_reservas.append(res3)
-        res3.procesar_reserva()
-    except Exception as e:
-        print(f"Excepción capturada durante la reserva: {e}")
-    
-    #Operación 10: Cancelar una reserva confirmada y registro en logs
-    try:
-        print("10. Cancelando reserva la 1")
-        if historial_reservas:
-            historial_reservas[0].cancelar_reserva()
-    except Exception as e:
-        print(f"Error al cancelar la reserva: {e}")
-        
-    print("\n=== Fin de la simulación ===")
+    run_simulation()
