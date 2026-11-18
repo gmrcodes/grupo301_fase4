@@ -10,7 +10,8 @@ polimorfismo, encapsulación y manejo avanzado de excepciones sin base de datos.
 
 from abc import ABC, abstractmethod
 import logging
-from typing import Any
+from typing import Any, overload
+import re
 
 
 # ==========================================
@@ -123,121 +124,380 @@ class BaseEntity(ABC):
 # 4. Clase cliente (Encapsulamiento y validaciones)
 # ================================================
 
-class Cliente(BaseEntity):
-    def __init__(self, id_cliente, nombre, correo):
-        super().__init__(id_cliente)
-        self.nombre = nombre
-        self.correo = correo
-    
+class Client(BaseEntity):
+    """Representa un cliente de Software FJ con validación estricta de datos."""
+
+    _EMAIL_PATTERN = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+
+    def __init__(self, client_id: str, name: str, email: str) -> None:
+        """Inicializa un cliente validando su ID, nombre y correo electrónico.
+
+        Args:
+            client_id: Identificador único del cliente.
+            name: Nombre completo (mínimo 3 caracteres alfabéticos/espacios).
+            email: Dirección de correo electrónico con formato válido.
+
+        Raises:
+            InvalidEntityError: Si el ID es inválido.
+            InvalidClientError: Si el nombre o el correo no cumplen las reglas.
+        """
+        super().__init__(client_id)
+        self.name = name
+        self.email = email
+
     @property
-    def nombre(self):
-        return self._nombre
-    
-    @nombre.setter
-    def nombre(self, valor):
-        if not valor or not isinstance(valor, str) or len(valor.strip()) <3:
-            raise ClienteInvalidoError(f"El nombre del cliente es inválido: '{valor}'. Debe tener al menos tres caracteres")
-        self._nombre = valor.strip()
-        
+    def name(self) -> str:
+        """Retorna el nombre encapsulado del cliente."""
+        return self._name
+
+    @name.setter
+    def name(self, value: Any) -> None:
+        """Valida y asigna el nombre del cliente.
+
+        Args:
+            value: Nuevo nombre a asignar.
+
+        Raises:
+            InvalidClientError: Si no es texto o tiene menos de 3 caracteres reales.
+        """
+        if not isinstance(value, str) or len(value.strip()) < 3:
+            raise InvalidClientError(
+                f"Nombre de cliente inválido: '{value}'. Debe contener al menos 3 caracteres."
+            )
+        self._name: str = value.strip()
+
     @property
-    def correo(self):
-        return self._correo
-    
-    @correo.setter
-    def correo(self, valor):
-        if not valor or "@" not in valor or "." not in valor:
-            raise ClienteInvalidoError(f"El correo del cliente es inválido: '{valor}'.")
-        self._correo = valor.strip()
-        
-    def detalles(self):
-        return f"Cliente[ID: {self._id_entidad}], Nombre: {self.nombre}, Correo: {self.correo}"
+    def email(self) -> str:
+        """Retorna el correo electrónico encapsulado del cliente."""
+        return self._email
+
+    @email.setter
+    def email(self, value: Any) -> None:
+        """Valida y asigna el correo electrónico mediante expresión regular.
+
+        Args:
+            value: Dirección de correo a validar.
+
+        Raises:
+            InvalidClientError: Si el correo no es texto o incumple el formato estándar.
+        """
+        if not isinstance(value, str) or not self._EMAIL_PATTERN.match(value.strip()):
+            raise InvalidClientError(
+                f"Correo electrónico inválido: '{value}'. Formato esperado: usuario@dominio.ext"
+            )
+        self._email: str = value.strip().lower()
+
+    def get_details(self) -> str:
+        """Retorna la ficha formateada del cliente."""
+        return f"Client[ID: {self.entity_id}] | Name: {self.name} | Email: {self.email}"
     
 # =======================================
 # 5. Clase abstracta servicio y subclases
 # =======================================
     
-class Servicio(EntidadBase): 
-    def __init__(self, id_servicio, nombre_servicio, tarifa_base):
-        super().__init__(id_servicio)
-        self.nombre_servicio = nombre_servicio
-        self.tarifa_base = float(tarifa_base)
-        
+class Service(BaseEntity, ABC):
+    """Clase abstracta base para los servicios ofrecidos por Software FJ."""
+
+    def __init__(
+        self,
+        service_id: str,
+        name: str,
+        base_rate: float,
+        available: bool = True,
+    ) -> None:
+        """Inicializa un servicio validando nombre, tarifa y disponibilidad.
+
+        Args:
+            service_id: Identificador único del servicio.
+            name: Nombre del servicio.
+            base_rate: Tarifa base por unidad de tiempo (debe ser mayor a 0).
+            available: Indica si el servicio está habilitado para reservas.
+
+        Raises:
+            InvalidServiceError: Si el nombre, tarifa o disponibilidad son inválidos.
+        """
+        super().__init__(service_id)
+        self.name = name
+        self.base_rate = base_rate
+        self.available = available
+
     @property
-    def tarifa_base(self):
-        return self._tarifa_base
-        
-    @tarifa_base.setter
-    def tarifa_base(self, valor):
-        if valor <= 0:
-            raise ServicioInvalidoError("La tarifa base no puede ser negativa.")
-        self._tarifa_base = float(valor)
-    
-    def detalles(self):
-        return f"Servicio[ID: {self._id_entidad}], Nombre: {self.nombre_servicio}, Tarifa Base: ${self.tarifa_base}"
-            
+    def name(self) -> str:
+        """Retorna el nombre del servicio."""
+        return self._name
+
+    @name.setter
+    def name(self, value: Any) -> None:
+        """Valida que el nombre del servicio sea una cadena no vacía."""
+        if not isinstance(value, str) or len(value.strip()) < 3:
+            raise InvalidServiceError(
+                f"Nombre de servicio inválido: '{value}'. Mínimo 3 caracteres."
+            )
+        self._name: str = value.strip()
+
+    @property
+    def base_rate(self) -> float:
+        """Retorna la tarifa base del servicio."""
+        return self._base_rate
+
+    @base_rate.setter
+    def base_rate(self, value: Any) -> None:
+        """Valida y convierte la tarifa base asegurando un valor estrictamente positivo."""
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise InvalidServiceError(
+                f"La tarifa base debe ser numérica, se recibió: '{value}'."
+            )
+        if value <= 0:
+            raise InvalidServiceError(
+                f"La tarifa base debe ser mayor a cero, se recibió: {value}."
+            )
+        self._base_rate: float = float(value)
+
+    @property
+    def available(self) -> bool:
+        """Indica si el servicio está disponible actualmente."""
+        return self._available
+
+    @available.setter
+    def available(self, value: Any) -> None:
+        """Valida que la disponibilidad sea estrictamente booleana."""
+        if not isinstance(value, bool):
+            raise InvalidServiceError("El estado de disponibilidad debe ser booleano (True/False).")
+        self._available: bool = value
+
+    def _validate_calculation_inputs(
+        self,
+        duration: Any,
+        tax_rate: float,
+        discount_rate: float,
+        extra_charge: float,
+    ) -> int:
+        """Valida los parámetros comunes antes de ejecutar cualquier cálculo de costo.
+
+        Args:
+            duration: Unidades de tiempo (horas o días).
+            tax_rate: Porcentaje de impuesto en formato decimal (ej. 0.19).
+            discount_rate: Porcentaje de descuento en formato decimal (0.0 a 0.99).
+            extra_charge: Cargo adicional no negativo (seguro, bono o logística).
+
+        Returns:
+            La duración validada como entero positivo.
+
+        Raises:
+            InvalidServiceError: Si el servicio no está disponible o algún parámetro es inválido.
+        """
+        if not self.available:
+            raise InvalidServiceError(
+                f"El servicio '{self.name}' ({self.entity_id}) no está disponible actualmente."
+            )
+        if isinstance(duration, bool) or not isinstance(duration, int) or duration <= 0:
+            raise InvalidServiceError(
+                f"Duración inválida: '{duration}'. Debe ser un entero mayor a cero."
+            )
+        if not isinstance(tax_rate, (int, float)) or tax_rate < 0:
+            raise InvalidServiceError(f"Tasa de impuesto inválida: {tax_rate}.")
+        if not isinstance(discount_rate, (int, float)) or not (0.0 <= discount_rate < 1.0):
+            raise InvalidServiceError(
+                f"Descuento inválido: {discount_rate}. Debe estar entre 0.0 y 0.99."
+            )
+        if not isinstance(extra_charge, (int, float)) or extra_charge < 0:
+            raise InvalidServiceError(f"Cargo adicional inválido: {extra_charge}.")
+        return duration
+
+    @overload
+    def calculate_cost(self, duration: int) -> float: ...
+
+    @overload
+    def calculate_cost(self, duration: int, tax_rate: float) -> float: ...
+
+    @overload
+    def calculate_cost(
+        self,
+        duration: int,
+        tax_rate: float = 0.19,
+        discount_rate: float = 0.0,
+        extra_charge: float = 0.0,
+    ) -> float: ...
+
     @abstractmethod
-    def descripcion(self):
-        pass
-        
-class ServicioSala(Servicio):
-    def __init__(self, id_servicio, nombre, tarifa_base, capacidad):
-        super().__init__(id_servicio, nombre, tarifa_base)
-        self.capacidad = capacidad
-    
-    def descripcion(self):
-        return f"Reserva de Sala: {self.nombre_servicio}, Capacidad: {self.capacidad} personas, Tarifa Base: ${self.tarifa_base}"
+    def calculate_cost(
+        self,
+        duration: int,
+        tax_rate: float = 0.19,
+        discount_rate: float = 0.0,
+        extra_charge: float = 0.0,
+    ) -> float:
+        """Calcula el costo total del servicio aplicando reglas propias de cada subclase."""
+        raise NotImplementedError
 
-    def calcular_costo(self, duracion, impuesto=0.19, seguro=50.0):
-        try:
-            duracion = int(duracion)
-            if duracion <= 0:
-                raise ValueError("Los días deben ser mayor a cero.")
-        except Exception as e:
-            raise ServicioInvalidoError(f"Error al procesar los días de aqluiler") from e 
-        
-        subtotal = (self.tarifa_base * duracion) + seguro
-        total = subtotal * (1 + impuesto)
-        return total
+    @abstractmethod
+    def get_description(self) -> str:
+        """Retorna la descripción comercial y técnica específica del servicio."""
+        raise NotImplementedError
 
-class ServicioEquipo(Servicio):
-    def __init__(self, id_servicio, nombre, tarifa_base, tipo_hardware):
-        super().__init__(id_servicio, nombre, tarifa_base)
-        self.tipo_hardware = tipo_hardware
+    def get_details(self) -> str:
+        """Retorna los detalles generales del servicio."""
+        status = "Disponible" if self.available else "No disponible"
+        return (
+            f"Service[ID: {self.entity_id}] | {self.name} | "
+            f"Base Rate: ${self.base_rate:,.2f} | Status: {status}"
+        )
 
-    def descripcion(self):
-        return f"Alquiler de Equipo: {self.nombre_servicio} [{self.tipo_hardware}] - Tarifa/Día: ${self.tarifa_base}"
 
-    def calcular_costo(self, duracion, impuesto=0.19, seguro=50.0):
-        try:
-            duracion = int(duracion)
-            if duracion <= 0:
-                raise ValueError("Los días de alquiler deben ser mayores a 0.")
-        except Exception as e:
-            raise ServicioInvalidoError("Error al procesar los días de alquiler del equipo.") from e
+class RoomService(Service):
+    """Servicio especializado para reserva de salas físicas o auditorios."""
 
-        subtotal = (self.tarifa_base * duracion) + seguro
-        total = subtotal * (1 + impuesto)
-        return total
-    
-class ServicioAsesoria(Servicio):
-    def __init__(self, id_servicio, nombre, tarifa_base, especialidad):
-        super().__init__(id_servicio, nombre, tarifa_base)
-        self.especialidad = especialidad
-        
-    def descripcion(self):
-        return f"Asesoría Especializada: {self.nombre_servicio}, Especialidad: {self.especialidad}, Tarifa/ Hora: ${self.tarifa_base}"
-    
-    def calcular_costo(self, duracion, impuesto=0.19, bono_especial=0.0):
-        try:
-            duracion = int(duracion)
-            if duracion <= 0:
-                raise ValueError("Las horas deben ser mayor a cero.")
-        except Exception as e:
-            raise ServicioInvalidoError("Error al procesar las horas de asesoría") from e
-        
-        subtotal = (self.tarifa_base * duracion) + bono_especial
-        total = subtotal * (1 + impuesto)
-        return total
+    def __init__(
+        self,
+        service_id: str,
+        name: str,
+        base_rate: float,
+        capacity: int,
+        available: bool = True,
+    ) -> None:
+        """Inicializa una sala validando su aforo máximo."""
+        super().__init__(service_id, name, base_rate, available)
+        self.capacity = capacity
+
+    @property
+    def capacity(self) -> int:
+        """Retorna la capacidad máxima de personas de la sala."""
+        return self._capacity
+
+    @capacity.setter
+    def capacity(self, value: Any) -> None:
+        """Valida que la capacidad sea un entero mayor a cero."""
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise InvalidServiceError(
+                f"Capacidad de sala inválida: '{value}'. Debe ser un entero positivo."
+            )
+        self._capacity: int = value
+
+    def get_description(self) -> str:
+        """Retorna la descripción detallada de la sala."""
+        return (
+            f"Room Service: {self.name} | Capacity: {self.capacity} people | "
+            f"Hourly Rate: ${self.base_rate:,.2f}"
+        )
+
+    def calculate_cost(
+        self,
+        duration: int,
+        tax_rate: float = 0.19,
+        discount_rate: float = 0.0,
+        extra_charge: float = 0.0,
+    ) -> float:
+        """Calcula el costo de la sala aplicando descuento por volumen y recargo de montaje."""
+        valid_duration = self._validate_calculation_inputs(
+            duration, tax_rate, discount_rate, extra_charge
+        )
+        # Descuento automático adicional del 5% si la reserva supera las 8 horas
+        effective_discount = min(0.99, discount_rate + (0.05 if valid_duration >= 8 else 0.0))
+        discounted_base = (self.base_rate * valid_duration) * (1.0 - effective_discount)
+        subtotal = discounted_base + extra_charge
+        return round(subtotal * (1.0 + tax_rate), 2)
+
+
+class EquipmentService(Service):
+    """Servicio especializado para alquiler de equipos tecnológicos."""
+
+    def __init__(
+        self,
+        service_id: str,
+        name: str,
+        base_rate: float,
+        hardware_type: str,
+        available: bool = True,
+    ) -> None:
+        """Inicializa un equipo validando su categoría de hardware."""
+        super().__init__(service_id, name, base_rate, available)
+        self.hardware_type = hardware_type
+
+    @property
+    def hardware_type(self) -> str:
+        """Retorna el tipo de hardware del equipo."""
+        return self._hardware_type
+
+    @hardware_type.setter
+    def hardware_type(self, value: Any) -> None:
+        """Valida que el tipo de hardware sea una cadena no vacía."""
+        if not isinstance(value, str) or not value.strip():
+            raise InvalidServiceError("El tipo de hardware no puede estar vacío.")
+        self._hardware_type: str = value.strip()
+
+    def get_description(self) -> str:
+        """Retorna la descripción detallada del equipo en alquiler."""
+        return (
+            f"Equipment Rental: {self.name} [{self.hardware_type}] | "
+            f"Daily Rate: ${self.base_rate:,.2f}"
+        )
+
+    def calculate_cost(
+        self,
+        duration: int,
+        tax_rate: float = 0.19,
+        discount_rate: float = 0.0,
+        extra_charge: float = 50.0,
+    ) -> float:
+        """Calcula el costo del equipo sumando póliza de seguro diaria por defecto ($50)."""
+        valid_duration = self._validate_calculation_inputs(
+            duration, tax_rate, discount_rate, extra_charge
+        )
+        discounted_base = (self.base_rate * valid_duration) * (1.0 - discount_rate)
+        # En equipos, extra_charge representa el seguro obligatorio por cada día de alquiler
+        insurance_total = extra_charge * valid_duration
+        subtotal = discounted_base + insurance_total
+        return round(subtotal * (1.0 + tax_rate), 2)
+
+
+class AdvisoryService(Service):
+    """Servicio especializado para consultorías y asesorías técnicas."""
+
+    def __init__(
+        self,
+        service_id: str,
+        name: str,
+        base_rate: float,
+        specialty: str,
+        available: bool = True,
+    ) -> None:
+        """Inicializa una asesoría validando el área de especialidad."""
+        super().__init__(service_id, name, base_rate, available)
+        self.specialty = specialty
+
+    @property
+    def specialty(self) -> str:
+        """Retorna el área de especialidad de la asesoría."""
+        return self._specialty
+
+    @specialty.setter
+    def specialty(self, value: Any) -> None:
+        """Valida que la especialidad sea una cadena no vacía."""
+        if not isinstance(value, str) or not value.strip():
+            raise InvalidServiceError("La especialidad de la asesoría no puede estar vacía.")
+        self._specialty: str = value.strip()
+
+    def get_description(self) -> str:
+        """Retorna la descripción detallada de la asesoría."""
+        return (
+            f"Specialized Advisory: {self.name} (Specialty: {self.specialty}) | "
+            f"Hourly Rate: ${self.base_rate:,.2f}"
+        )
+
+    def calculate_cost(
+        self,
+        duration: int,
+        tax_rate: float = 0.19,
+        discount_rate: float = 0.0,
+        extra_charge: float = 0.0,
+    ) -> float:
+        """Calcula el costo de asesoría aplicando bono por entregables/viáticos (extra_charge)."""
+        valid_duration = self._validate_calculation_inputs(
+            duration, tax_rate, discount_rate, extra_charge
+        )
+        discounted_base = (self.base_rate * valid_duration) * (1.0 - discount_rate)
+        subtotal = discounted_base + extra_charge
+        return round(subtotal * (1.0 + tax_rate), 2)
     
 # ====================
 # 6. Clase de reserva
@@ -259,30 +519,30 @@ class Reserva:
     def procesar_reserva(self):
         #Manejo avanzado con try/except/else/finally
         try:
-            logging.info(f"Procesando la reserva {self.id_reserva} para el cliente {self.cliente.nombre}")
+            logging.info(f"Procesando la reserva {self.id_reserva} para el cliente {self.cliente.name}")
             print(f"\n[PROCESANDO] Reserva {self.id_reserva}")
             
             #Calculo del costo usando polimorfismo
-            if isinstance(self.servicio, ServicioSala):
+            if isinstance(self.servicio, RoomService):
                 self.costo_total = self.servicio.calcular_costo(self.duracion, descuento=self.param_extra)
-            elif isinstance(self.servicio, ServicioEquipo):
+            elif isinstance(self.servicio, EquipmentService):
                 self.costo_total = self.servicio.calcular_costo(self.duracion, seguro=self.param_extra)
-            elif isinstance(self.servicio, ServicioAsesoria):
+            elif isinstance(self.servicio, AdvisoryService):
                 self.costo_total = self.servicio.calcular_costo(self.duracion, bono_especial=self.param_extra)
             else:
-                raise ReservaError("Tipo de servicio desconocido al calcular costo.")
+                raise ReservationError("Tipo de servicio desconocido al calcular costo.")
         
         except SoftwareFJError as e:
             self.estado = "Fallida"
-            logging.error(f"Error en la reserva {self.id_reserva}: {se}")
-            print(f"[ERROR] {se}")
+            logging.error(f"Error en la reserva {self.id_reserva}: {e}")
+            print(f"[ERROR] {e}")
             raise 
         
         except Exception as ex:
             self.estado = "Fallida"
             logging.critical(f"Error inesperado en la reserva {self.id_reserva}: {ex}")
             print(f"[ERROR CRÍTICO] {ex}")
-            raise ReservaError("Fallo inesperado al procesar la reserva.") from ex
+            raise ReservationError("Fallo inesperado al procesar la reserva.") from ex
         
         else:
             self.estado = "Confirmada"
@@ -314,24 +574,24 @@ if __name__ == "__main__":
     
     #Operación 1: Registro de cliente 1
     try:
-        c1 = Cliente("CLI-01", "Juan Pérez", "juan.perez@email.com")
+        c1 = Client("CLI-01", "Juan Pérez", "juan.perez@email.com")
         clientes_registrados.append(c1)
-        print(f"1. Registro exitoso: {c1.detalles()}")
-        logging.info(f"Cliente registrado: {c1.nombre}")
+        print(f"1. Registro exitoso: {c1.details()}")
+        logging.info(f"Cliente registrado: {c1.name}")
     except Exception as e:
         print(f"Error al registrar cliente: {e}")
     
     #Operación 2: Registro fallido del cliente (nombre invalido)
     try:
         print("\n2. Intentando registrar cliente con nombre invalido")
-        c_malo = Cliente("CLI-02", "All", "all@email.com")
-    except ClienteInvalidoError as cie:
+        c_malo = Client("CLI-02", "All", "all@email.com")
+    except InvalidClientError as cie:
         print(f"Excepcion capturada: {cie}")
         logging.warning(f"Intento de registro fallido: {cie}")
         
     # Operación 3: Registro de cliente 2
     try: 
-        c2 = Cliente("CLI-03", "María López", "maria.lopez@email.com")
+        c2 = Client("CLI-03", "María López", "maria.lopez@email.com")
         clientes_registrados.append(c2)
         print(f"\n3. Registro exitoso: {c2.detalles()}")
     except Exception as e:
@@ -339,7 +599,7 @@ if __name__ == "__main__":
     
     #Operación 4: Registro de servicio de sala
     try: 
-        s1 = ServicioSala("SRV-01", "Sala Magna", 45000.0, 20)
+        s1 = RoomService("SRV-01", "Sala Magna", 45000.0, 20)
         servicios_disponibles.append(s1)
         print(f"\n4. Servicio registrado: {s1.descripcion()}")
     except Exception as e:
@@ -347,7 +607,7 @@ if __name__ == "__main__":
     
     #Operación 5: Registro de servicio de asesoría
     try:
-        s2 = ServicioAsesoria("SRV-02", "Servidor Cloud AWS", 120000.0, "Servidor Dedicado")
+        s2 = AdvisoryService("SRV-02", "Servidor Cloud AWS", 120000.0, "Servidor Dedicado")
         servicios_disponibles.append(s2)
         print(f"\n5. Servicio registrado: {s2.descripcion()}")
     except Exception as e:
@@ -355,7 +615,7 @@ if __name__ == "__main__":
         
     #Operación 6: Creación correcta de servicio 
     try:
-        s3 = ServicioAsesoria("SRV-03", "Consultoria en Machine Learning", 90000.0, "Inteligencia Artificial")
+        s3 = AdvisoryService("SRV-03", "Consultoria en Machine Learning", 90000.0, "Inteligencia Artificial")
         servicios_disponibles.append(s3)
         print(f"\n6. Servicio registrado: {s3.descripcion()}")
     except Exception as e:
