@@ -2,57 +2,128 @@
 # de programación 2013023. El grupo 301 está integrado por:
 # Alith Rodríguez, Germán Riveros
 
-import logging 
+"""Sistema Integral de Gestión de Clientes, Servicios y Reservas - Software FJ.
+
+Módulo único orientado a objetos que implementa abstracción, herencia,
+polimorfismo, encapsulación y manejo avanzado de excepciones sin base de datos.
+"""
+
 from abc import ABC, abstractmethod
+import logging
+from typing import Any
 
-# =====================================
-# 1. Configuración del sistemas de Logs
-# =====================================
 
-logging.basicConfig(
-    filename='Sistema.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+# ==========================================
+# 1. Configuración del Sistema de Logs
+# ==========================================
 
-# =============================
-# 2. Excepciones personalizadas
-# =============================
+def configure_logging(log_file: str = "software_fj.log") -> logging.Logger:
+    """Configura y retorna el logger principal de la aplicación.
+
+    Args:
+        log_file: Ruta o nombre del archivo donde se almacenarán los eventos.
+
+    Returns:
+        Instancia configurada de logging.Logger.
+    """
+    logger = logging.getLogger("SoftwareFJ")
+    logger.setLevel(logging.INFO)
+
+    if not logger.handlers:
+        file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
+        formatter = logging.Formatter(
+            "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+    return logger
+
+
+LOGGER = configure_logging()
+
+
+# ==========================================
+# 2. Jerarquía de Excepciones Personalizadas
+# ==========================================
 
 class SoftwareFJError(Exception):
-    """Excepción base para el sistema de Software FJ."""
-    pass
+    """Excepción base para todos los errores de dominio en Software FJ."""
 
-class ClienteInvalidoError(SoftwareFJError):
-    """Excepción para errores en la definición o parametros del servicio."""
-    pass
 
-class ServicioInvalidoError(SoftwareFJError):
-    """Excepción para errores en la definición o parametros del servicio."""
-    pass
+class InvalidEntityError(SoftwareFJError):
+    """Se lanza cuando los identificadores o atributos base son inválidos."""
 
-class ReservaError(SoftwareFJError):
-    """Excepción para errores en la reserva de servicios."""
-    pass
 
-# ==========================
-# 3. Clase abstracta base 
-# ==========================
+class InvalidClientError(SoftwareFJError):
+    """Se lanza ante datos inválidos o inconsistentes en un cliente."""
 
-class EntidadBase(ABC):
-    def __init__(self, id_entidad):
-        self._id_entidad = id_entidad
-        
+
+class InvalidServiceError(SoftwareFJError):
+    """Se lanza ante parámetros inválidos o indisponibilidad de un servicio."""
+
+
+class ReservationError(SoftwareFJError):
+    """Se lanza cuando una reserva falla en validación, cálculo o estado."""
+
+
+# ==========================================
+# 3. Clase Abstracta Base del Sistema
+# ==========================================
+
+class BaseEntity(ABC):
+    """Clase abstracta que representa cualquier entidad identificable del sistema."""
+
+    def __init__(self, entity_id: str) -> None:
+        """Inicializa la entidad validando su identificador único.
+
+        Args:
+            entity_id: Cadena no vacía que identifica de forma única la entidad.
+
+        Raises:
+            InvalidEntityError: Si el identificador no es una cadena válida.
+        """
+        self._entity_id: str = self._validate_id(entity_id)
+
+    @staticmethod
+    def _validate_id(entity_id: Any) -> str:
+        """Valida que el identificador sea un texto no vacío ni compuesto solo por espacios.
+
+        Args:
+            entity_id: Valor a validar como identificador.
+
+        Returns:
+            El identificador limpio de espacios en los extremos.
+
+        Raises:
+            InvalidEntityError: Si el valor es nulo, no es str o está vacío.
+        """
+        if not isinstance(entity_id, str) or not entity_id.strip():
+            raise InvalidEntityError(
+                f"Identificador de entidad inválido: '{entity_id}'. Debe ser una cadena no vacía."
+            )
+        return entity_id.strip()
+
+    @property
+    def entity_id(self) -> str:
+        """Retorna el identificador encapsulado de solo lectura de la entidad."""
+        return self._entity_id
+
     @abstractmethod
-    def detalles(self):
-        pass
-    
+    def get_details(self) -> str:
+        """Retorna una representación detallada en texto de la entidad."""
+        raise NotImplementedError
 
+    def __str__(self) -> str:
+        """Representación legible estándar delegada a get_details."""
+        return self.get_details()
+    
 # ================================================
 # 4. Clase cliente (Encapsulamiento y validaciones)
 # ================================================
 
-class Cliente(EntidadBase):
+class Cliente(BaseEntity):
     def __init__(self, id_cliente, nombre, correo):
         super().__init__(id_cliente)
         self.nombre = nombre
