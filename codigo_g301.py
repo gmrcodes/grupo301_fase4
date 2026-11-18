@@ -9,6 +9,7 @@ polimorfismo, encapsulación y manejo avanzado de excepciones sin base de datos.
 """
 
 from abc import ABC, abstractmethod
+from enum import Enum
 import logging
 from typing import Any, overload
 import re
@@ -503,62 +504,172 @@ class AdvisoryService(Service):
 # 6. Clase de reserva
 # ====================
 
-class Reserva:
-    contador_reservas = 1000
-    
-    def __init__(self, cliente, servicio, duracion, param_extra=0.0):
-        Reserva.contador_reservas += 1
-        self.id_reserva = f"RES-{Reserva.contador_reservas}"
-        self.cliente = cliente
-        self.servicio = servicio
-        self.duracion = duracion
-        self.param_extra = param_extra
-        self.estado = "Pendiente"
-        self.costo_total = 0.0
-    
-    def procesar_reserva(self):
-        #Manejo avanzado con try/except/else/finally
+class ReservationStatus(Enum):
+    """Estados válidos dentro del ciclo de vida de una reserva."""
+
+    PENDING = "Pending"
+    CONFIRMED = "Confirmed"
+    CANCELLED = "Cancelled"
+    FAILED = "Failed"
+
+
+class Reservation(BaseEntity):
+    """Integra cliente, servicio y duración gestionando el ciclo de vida de la reserva."""
+
+    _id_counter: int = 1000
+
+    def __init__(
+        self,
+        client: Client,
+        service: Service,
+        duration: int,
+        tax_rate: float = 0.19,
+        discount_rate: float = 0.0,
+        extra_charge: float = 0.0,
+    ) -> None:
+        """Inicializa una reserva en estado pendiente validando sus entidades asociadas.
+
+        Args:
+            client: Instancia válida de Client que solicita el servicio.
+            service: Instancia válida de una subclase de Service.
+            duration: Cantidad de horas o días solicitados.
+            tax_rate: Tasa de impuesto aplicable en decimal.
+            discount_rate: Descuento promocional en decimal (0.0 a 0.99).
+            extra_charge: Cargo adicional opcional (seguro, bono o montaje).
+
+        Raises:
+            ReservationError: Si el cliente o el servicio no son instancias válidas.
+        """
+        if not isinstance(client, Client):
+            raise ReservationError("La reserva requiere una instancia válida de Client.")
+        if not isinstance(service, Service):
+            raise ReservationError("La reserva requiere una instancia válida de Service.")
+
+        Reservation._id_counter += 1
+        super().__init__(f"RES-{Reservation._id_counter}")
+
+        self._client: Client = client
+        self._service: Service = service
+        self._duration: int = duration
+        self._tax_rate: float = tax_rate
+        self._discount_rate: float = discount_rate
+        self._extra_charge: float = extra_charge
+        self._status: ReservationStatus = ReservationStatus.PENDING
+        self._total_cost: float = 0.0
+
+    @property
+    def client(self) -> Client:
+        """Retorna el cliente asociado a la reserva."""
+        return self._client
+
+    @property
+    def service(self) -> Service:
+        """Retorna el servicio asociado a la reserva."""
+        return self._service
+
+    @property
+    def duration(self) -> int:
+        """Retorna la duración solicitada."""
+        return self._duration
+
+    @property
+    def status(self) -> ReservationStatus:
+        """Retorna el estado actual de la reserva."""
+        return self._status
+
+    @property
+    def total_cost(self) -> float:
+        """Retorna el costo total calculado tras procesar la reserva."""
+        return self._total_cost
+
+    def process(self) -> float:
+        """Procesa y confirma la reserva calculando su costo de forma polimórfica.
+
+        Returns:
+            El costo total confirmado de la reserva.
+
+        Raises:
+            ReservationError: Si la reserva no está pendiente, si el servicio falla
+                en sus validaciones o si ocurre un error inesperado.
+        """
+        # Guardia de estado fuera del try para no corromper reservas ya confirmadas
+        if self._status is not ReservationStatus.PENDING:
+            msg = (
+                f"Operación no permitida: la reserva {self.entity_id} ya fue procesada "
+                f"(estado actual: {self._status.value})."
+            )
+            LOGGER.warning(msg)
+            raise ReservationError(msg)
+
         try:
-            logging.info(f"Procesando la reserva {self.id_reserva} para el cliente {self.cliente.name}")
-            print(f"\n[PROCESANDO] Reserva {self.id_reserva}")
-            
-            #Calculo del costo usando polimorfismo
-            if isinstance(self.servicio, RoomService):
-                self.costo_total = self.servicio.calcular_costo(self.duracion, descuento=self.param_extra)
-            elif isinstance(self.servicio, EquipmentService):
-                self.costo_total = self.servicio.calcular_costo(self.duracion, seguro=self.param_extra)
-            elif isinstance(self.servicio, AdvisoryService):
-                self.costo_total = self.servicio.calcular_costo(self.duracion, bono_especial=self.param_extra)
-            else:
-                raise ReservationError("Tipo de servicio desconocido al calcular costo.")
-        
-        except SoftwareFJError as e:
-            self.estado = "Fallida"
-            logging.error(f"Error en la reserva {self.id_reserva}: {e}")
-            print(f"[ERROR] {e}")
-            raise 
-        
-        except Exception as ex:
-            self.estado = "Fallida"
-            logging.critical(f"Error inesperado en la reserva {self.id_reserva}: {ex}")
-            print(f"[ERROR CRÍTICO] {ex}")
-            raise ReservationError("Fallo inesperado al procesar la reserva.") from ex
-        
+            LOGGER.info(
+                "Procesando reserva %s | Cliente: %s | Servicio: %s",
+                self.entity_id,
+                self._client.name,
+                self._service.name,
+            )
+            # Llamada polimórfica sin necesidad de verificar el tipo de subclase
+            self._total_cost = self._service.calculate_cost(
+                duration=self._duration,
+                tax_rate=self._tax_rate,
+                discount_rate=self._discount_rate,
+                extra_charge=self._extra_charge,
+            )
+        except InvalidServiceError as exc:
+            self._status = ReservationStatus.FAILED
+            LOGGER.error("Fallo de validación en reserva %s: %s", self.entity_id, exc)
+            raise ReservationError(
+                f"No se pudo confirmar la reserva {self.entity_id}: {exc}"
+            ) from exc
+        except Exception as exc:
+            self._status = ReservationStatus.FAILED
+            LOGGER.critical(
+                "Error inesperado procesando reserva %s: %s", self.entity_id, exc
+            )
+            raise ReservationError(
+                f"Error crítico inesperado al procesar {self.entity_id}."
+            ) from exc
         else:
-            self.estado = "Confirmada"
-            logging.info(f"Reserva {self.id_reserva} confirmada con exito. Total: ${self.costo_total:.2f}")
-            print(f"[CONFIRMADA] Reserva {self.id_reserva} CONFIRMADA. Total a pagar: ${self.costo_total:.2f}")
+            self._status = ReservationStatus.CONFIRMED
+            LOGGER.info(
+                "Reserva %s confirmada exitosamente. Total: $%.2f",
+                self.entity_id,
+                self._total_cost,
+            )
+            return self._total_cost
         finally:
-            print(f"[FINALIZADO] Reserva finaliazada con estado: {self.estado}\n")
-            
-    def cancelar_reserva(self):
-        if self.estado == "Confirmada":
-            self.estado = "Cancelada"
-            logging.info(f"Reserva {self.ide_reserva} cancelada exitosamente")
-            print(f"La reserva {self.id_reserva} ha sido cancelada")
+            LOGGER.info(
+                "Auditoría de cierre -> Reserva %s finalizó intento con estado: %s",
+                self.entity_id,
+                self._status.value,
+            )
+
+    def cancel(self) -> None:
+        """Cancela una reserva únicamente si se encuentra en estado confirmado.
+
+        Raises:
+            ReservationError: Si se intenta cancelar una reserva que no está confirmada.
+        """
+        try:
+            if self._status is not ReservationStatus.CONFIRMED:
+                raise ReservationError(
+                    f"Operación no permitida: no se puede cancelar la reserva {self.entity_id} "
+                    f"en estado '{self._status.value}'."
+                )
+        except ReservationError as exc:
+            LOGGER.warning("Intento inválido de cancelación: %s", exc)
+            raise
         else:
-            logging.warning(f"Error al cancelar la reserva {self.id_reserva} en estado '{self.estado}'")
-            print(f"No se puede cancelar la reserva {self.id_reserva} porque su estado es '{self.estado}'")
+            self._status = ReservationStatus.CANCELLED
+            LOGGER.info("Reserva %s cancelada exitosamente.", self.entity_id)
+
+    def get_details(self) -> str:
+        """Retorna el resumen completo de la reserva y su estado actual."""
+        return (
+            f"Reservation[ID: {self.entity_id}] | Client: {self._client.name} | "
+            f"Service: {self._service.name} | Duration: {self._duration} | "
+            f"Status: {self._status.value} | Total: ${self._total_cost:,.2f}"
+        )
             
 # =================================
 # 7. Simulación de diez operaciones
